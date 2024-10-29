@@ -1,8 +1,10 @@
 import sys
-import socket
 
 import serial
+import paramiko
 from PyQt5 import QtWidgets, QtGui, QtCore
+from PyQt5.QtCore import pyqtSignal, QThread
+
 
 class DeviceControlApp(QtWidgets.QWidget):
     def __init__(self):
@@ -100,49 +102,60 @@ class DeviceControlApp(QtWidgets.QWidget):
 
     def connect_to_pi(self):
         try:
-            self.serial_connection = serial.Serial('/dev/cu.Bluetooth-Incoming-Port', 9600)
-            self.log_message("Connected to Raspberry Pi")
+            hostname = "192.168.2.3"
+            username = "team6"
+            password = "team6"
+
+            # Create an SSH client
+            self.ssh_client = paramiko.SSHClient()
+            self.ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+            # Connect to the Raspberry Pi
+            self.ssh_client.connect(hostname, username=username, password=password)
+            self.log_message("Connected to Raspberry Pi via SSH")
             self.status_label.setText("Device Status: Connected")
-        except serial.SerialException as e:
-            self.log_message(f"Error connecting to Raspberry Pi: {e}")
+        except paramiko.SSHException as e:
+            self.log_message(f"Error connecting to Raspberry Pi via SSH: {e}")
             self.status_label.setText("Device Status: Error")
 
     def start_device(self):
-        if self.serial_connection or True:
-            # Read inputs from the input boxes
+        if hasattr(self, 'ssh_client') and self.ssh_client:
             try:
+                # Get input values
                 total_ics = float(self.total_ics_input.text())
                 gear_ratio = float(self.gear_ratio_input.text())
                 steps_per_rotation = float(self.steps_per_rotation_input.text())
+
+                # Calculate and prepare the command
+                command = "python3 /home/team6/Desktop/stepper_testing/three_motors.py"
+                self.log_message(f"Calculating IC: {steps_per_rotation * gear_ratio / total_ics}")
+
+                # Execute the command on the Raspberry Pi
+                stdin, stdout, stderr = self.ssh_client.exec_command(command)
+                output = stdout.read().decode()
+                error = stderr.read().decode()
+
+                # Display command results
+                if output:
+                    self.log_message(f"Output: {output}")
+                if error:
+                    self.log_message(f"Error: {error}")
+
+                self.status_label.setText("Device Status: Running")
             except ValueError:
                 self.log_message("Please enter valid numbers in all fields.")
-                return
-
-            if total_ics and gear_ratio and steps_per_rotation:
-                # Create the command to send to the microcontroller
-                command = f'start {total_ics} {gear_ratio} {steps_per_rotation}\n'
-
-                self.log_message(f"Calculating IC: {steps_per_rotation * gear_ratio / total_ics}")
-                # try:
-                #     self.serial_connection.write(command.encode())  # Send the command
-                #     self.status_label.setText("Device Status: Running")
-                #     self.log_message(
-                #         f"Device started with Total ICs: {total_ics}, Gear Ratio: {gear_ratio}, Steps/Rotation: {steps_per_rotation}")
-                # except serial.SerialException as e:
-                #     self.log_message(f"Error sending data to microcontroller: {e}")
-            else:
-                self.log_message("Please fill in all parameters before starting the device.")
         else:
-            self.log_message("Not connected to the microcontroller! Please press Connect.")
+            self.log_message("Not connected to Raspberry Pi! Please press Connect.")
 
+
+    # Modify stop_device to use StopDeviceThread
     def stop_device(self):
-        if self.serial_connection:
-            try:
-                self.serial_connection.write(b'stop\n')
-                self.status_label.setText("Device Status: Stopped")
-                self.log_message("Device stopped!")
-            except serial.SerialException as e:
-                self.log_message(f"Error stopping device: {e}")
+        if hasattr(self, 'ssh_client') and self.ssh_client:
+            # Create and start the thread to handle stopping the device
+            self.stop_thread = StopDeviceThread(self.ssh_client)
+            self.stop_thread.stop_complete.connect(self.log_message)  # Connect signal to log
+            self.stop_thread.start()  # Start the thread
+            self.status_label.setText("Device Status: Stopping...")
         else:
             self.log_message("Not connected to Raspberry Pi!")
 
@@ -167,3 +180,26 @@ def main():
 if __name__ == '__main__':
     main()
 
+
+class StopDeviceThread(QThread):
+    stop_complete = pyqtSignal(str)
+
+    def __init__(self, ssh_client):
+        super().__init__()
+        self.ssh_client = ssh_client
+
+    def run(self):
+        try:
+            # Execute the pkill command with a timeout
+            kill_command = "pkill -f python3"
+            stdin, stdout, stderr = self.ssh_client.exec_command(kill_command, timeout=5)
+
+            # Capture any errors
+            error = stderr.read().decode()
+            if error:
+                self.stop_complete.emit(f"Error stopping processes on Raspberry Pi: {error}")
+            else:
+                self.stop_complete.emit("All Python processes stopped on Raspberry Pi.")
+
+        except paramiko.SSHException as e:
+            self.stop_complete.emit(f"Error sending stop command to Raspberry Pi: {e}")

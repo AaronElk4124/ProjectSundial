@@ -36,6 +36,7 @@ class DeviceControlApp(QtWidgets.QWidget):
         self.total_ics_input = self.create_input_field("Total ICs", parameters_layout)
         self.gear_ratio_input = self.create_input_field("Gear Ratio", parameters_layout)
         self.steps_per_rotation_input = self.create_input_field("Steps per Rotation", parameters_layout)
+        self.ip_address_input = self.create_input_field("Raspberry Pi IP Address", parameters_layout)
 
         parameters_group.setLayout(parameters_layout)
         control_panel.addWidget(parameters_group)
@@ -100,9 +101,15 @@ class DeviceControlApp(QtWidgets.QWidget):
         button.clicked.connect(callback)
         return button
 
+    hostname = "192.168.2.3"
+
     def connect_to_pi(self):
         try:
-            hostname = "192.168.2.3"
+            hostname = self.ip_address_input.text().strip()
+            if not hostname:
+                self.log_message("Please enter a valid IP address.")
+                return
+
             username = "team6"
             password = "team6"
 
@@ -112,8 +119,9 @@ class DeviceControlApp(QtWidgets.QWidget):
 
             # Connect to the Raspberry Pi
             self.ssh_client.connect(hostname, username=username, password=password)
-            self.log_message("Connected to Raspberry Pi via SSH")
+            self.log_message(f"Connected to Raspberry Pi at {hostname} via SSH")
             self.status_label.setText("Device Status: Connected")
+
         except paramiko.SSHException as e:
             self.log_message(f"Error connecting to Raspberry Pi via SSH: {e}")
             self.status_label.setText("Device Status: Error")
@@ -127,7 +135,7 @@ class DeviceControlApp(QtWidgets.QWidget):
                 steps_per_rotation = float(self.steps_per_rotation_input.text())
 
                 # Calculate and prepare the command
-                command = "python3 /home/team6/Desktop/stepper_testing/three_motors.py"
+                command = "python3 /home/team6/Desktop/stepper_testing/Two_stepper_motors.py"
                 self.log_message(f"Calculating IC: {steps_per_rotation * gear_ratio / total_ics}")
 
                 # Execute the command on the Raspberry Pi
@@ -151,10 +159,9 @@ class DeviceControlApp(QtWidgets.QWidget):
     # Modify stop_device to use StopDeviceThread
     def stop_device(self):
         if hasattr(self, 'ssh_client') and self.ssh_client:
-            # Create and start the thread to handle stopping the device
-            self.stop_thread = StopDeviceThread(self.ssh_client)
-            self.stop_thread.stop_complete.connect(self.log_message)  # Connect signal to log
-            self.stop_thread.start()  # Start the thread
+            command = "pkill -f python3"
+            stdin, stdout, stderr = self.ssh_client.exec_command(command, timeout=5)
+            self.ssh_client.close()
             self.status_label.setText("Device Status: Stopping...")
         else:
             self.log_message("Not connected to Raspberry Pi!")
@@ -179,27 +186,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-
-class StopDeviceThread(QThread):
-    stop_complete = pyqtSignal(str)
-
-    def __init__(self, ssh_client):
-        super().__init__()
-        self.ssh_client = ssh_client
-
-    def run(self):
-        try:
-            # Execute the pkill command with a timeout
-            kill_command = "pkill -f python3"
-            stdin, stdout, stderr = self.ssh_client.exec_command(kill_command, timeout=5)
-
-            # Capture any errors
-            error = stderr.read().decode()
-            if error:
-                self.stop_complete.emit(f"Error stopping processes on Raspberry Pi: {error}")
-            else:
-                self.stop_complete.emit("All Python processes stopped on Raspberry Pi.")
-
-        except paramiko.SSHException as e:
-            self.stop_complete.emit(f"Error sending stop command to Raspberry Pi: {e}")

@@ -1,17 +1,14 @@
 import sys
-
-import serial
 import paramiko
 from PyQt5 import QtWidgets, QtGui, QtCore
-from PyQt5.QtCore import pyqtSignal, QThread
 
 
 class DeviceControlApp(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
         self.log_text = None
+        self.ssh_client = None
         self.init_ui()
-        self.serial_connection = None
 
     def init_ui(self):
         self.setWindowTitle("Project Sundial Control Panel")
@@ -21,69 +18,69 @@ class DeviceControlApp(QtWidgets.QWidget):
 
         control_panel = QtWidgets.QVBoxLayout()
 
-        status_label = QtWidgets.QLabel("Device Status: Idle")
-        status_label.setFont(QtGui.QFont("Arial", 18, QtGui.QFont.Bold))
-        status_label.setAlignment(QtCore.Qt.AlignCenter)
-        self.status_label = status_label
-        control_panel.addWidget(status_label)
+        # Status Label
+        self.status_label = QtWidgets.QLabel("Device Status: Idle")
+        self.status_label.setFont(QtGui.QFont("Arial", 18, QtGui.QFont.Bold))
+        self.status_label.setAlignment(QtCore.Qt.AlignCenter)
+        control_panel.addWidget(self.status_label)
 
+        # Parameters Input Group
         parameters_group = QtWidgets.QGroupBox("Device Parameters")
         parameters_group.setStyleSheet(
-            "QGroupBox { font-size: 16px; font-weight: bold; padding: 10px; border: 2px solid #4CAF50; border-radius: 5px; }"
+            "QGroupBox { font-size: 16px; font-weight: bold; padding: 10px; border: 2px solid #008080; border-radius: 5px; }"
         )
         parameters_layout = QtWidgets.QFormLayout()
-
         self.total_ics_input = self.create_input_field("Total ICs", parameters_layout)
         self.gear_ratio_input = self.create_input_field("Gear Ratio", parameters_layout)
         self.steps_per_rotation_input = self.create_input_field("Steps per Rotation", parameters_layout)
         self.ip_address_input = self.create_input_field("Raspberry Pi IP Address", parameters_layout)
-
         parameters_group.setLayout(parameters_layout)
         control_panel.addWidget(parameters_group)
 
-        self.connect_button = self.create_button("Connect", "#2196F3", self.connect_to_pi)
-        control_panel.addWidget(self.connect_button)
-
-        button_layout = QtWidgets.QHBoxLayout()
-        self.start_button = self.create_button("Start", "#4CAF50", self.start_device)
-        self.stop_button = self.create_button("Stop", "#f44336", self.stop_device)
-        button_layout.addWidget(self.start_button)
-        button_layout.addWidget(self.stop_button)
+        # Buttons
+        button_layout = QtWidgets.QVBoxLayout()
+        button_layout.addWidget(self.create_button("Connect To Device", "#008080", self.connect_to_pi))  # Teal
+        button_layout.addWidget(self.create_button("Step Forward", "#00BFFF", self.step_forward))  # Sky Blue
+        button_layout.addWidget(self.create_button("Step Backward", "#00BFFF", self.step_backward))  # Sky Blue
+        button_layout.addWidget(self.create_button("Test Connection", "#FFA500", self.test_connection))  # Light Orange
+        button_layout.addWidget(self.create_button("Test First Device", "#FFA500", self.test_first_device))  # Light Orange
+        button_layout.addWidget(self.create_button("Next Device", "#9370DB", self.next_device))  # Soft Purple
+        button_layout.addWidget(self.create_button("Previous Device", "#9370DB", self.previous_device))  # Soft Purple
+        button_layout.addWidget(self.create_button("Disconnect Pins", "#B22222", self.disconnect_pins))  # Deep Red
+        button_layout.addWidget(self.create_button("Reconnect Pins", "#2E8B57", self.reconnect_pins))  # Emerald Green
+        button_layout.addWidget(self.create_button("Disconnect From Device", "#B22222", self.disconnect_from_device))  # Deep Red
         control_panel.addLayout(button_layout)
 
         main_layout.addLayout(control_panel, 2)
 
+        # Log Panel
         log_panel = QtWidgets.QVBoxLayout()
-
         log_label = QtWidgets.QLabel("Log")
         log_label.setFont(QtGui.QFont("Arial", 16, QtGui.QFont.Bold))
         log_panel.addWidget(log_label)
-
         self.log_text = QtWidgets.QTextEdit()
         self.log_text.setReadOnly(True)
         self.log_text.setStyleSheet("background-color: #f0f0f0; padding: 10px; border-radius: 5px; font-size: 14px;")
         log_panel.addWidget(self.log_text)
 
         main_layout.addLayout(log_panel, 1)
-
         self.setLayout(main_layout)
 
     def create_input_field(self, label_text, layout):
         label = QtWidgets.QLabel(label_text)
         label.setFont(QtGui.QFont("Arial", 16))
         input_field = QtWidgets.QLineEdit()
-
         input_field.setStyleSheet(
             """
             QLineEdit {
                 padding: 10px;
                 font-size: 18px;
-                border: 2px solid #4CAF50;
+                border: 2px solid #008080;
                 border-radius: 25px;
                 background-color: #f9f9f9;
             }
             QLineEdit:focus {
-                border-color: #2196F3;
+                border-color: #00BFFF;
                 background-color: #e0f7fa;
             }
             """
@@ -101,7 +98,8 @@ class DeviceControlApp(QtWidgets.QWidget):
         button.clicked.connect(callback)
         return button
 
-    hostname = "192.168.2.3"
+    def log_message(self, message):
+        self.log_text.append(message)
 
     def connect_to_pi(self):
         try:
@@ -113,67 +111,63 @@ class DeviceControlApp(QtWidgets.QWidget):
             username = "team6"
             password = "team6"
 
-            # Create an SSH client
             self.ssh_client = paramiko.SSHClient()
             self.ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-
-            # Connect to the Raspberry Pi
             self.ssh_client.connect(hostname, username=username, password=password)
             self.log_message(f"Connected to Raspberry Pi at {hostname} via SSH")
             self.status_label.setText("Device Status: Connected")
-
-        except paramiko.SSHException as e:
-            self.log_message(f"Error connecting to Raspberry Pi via SSH: {e}")
+        except Exception as e:
+            self.log_message(f"Error connecting to Raspberry Pi: {e}")
             self.status_label.setText("Device Status: Error")
 
-    def start_device(self):
-        if hasattr(self, 'ssh_client') and self.ssh_client:
-            try:
-                # Get input values
-                total_ics = float(self.total_ics_input.text())
-                gear_ratio = float(self.gear_ratio_input.text())
-                steps_per_rotation = float(self.steps_per_rotation_input.text())
+    def step_forward(self):
+        self.execute_remote_command("step_forward")
 
-                # Calculate and prepare the command
-                command = "python3 /home/team6/Desktop/stepper_testing/Two_stepper_motors.py"
-                self.log_message(f"Calculating IC: {steps_per_rotation * gear_ratio / total_ics}")
+    def step_backward(self):
+        self.execute_remote_command("step_backward")
 
-                # Execute the command on the Raspberry Pi
-                stdin, stdout, stderr = self.ssh_client.exec_command(command)
-                output = stdout.read().decode()
-                error = stderr.read().decode()
+    def test_connection(self):
+        self.execute_remote_command("test_connection")
 
-                # Display command results
-                if output:
-                    self.log_message(f"Output: {output}")
-                if error:
-                    self.log_message(f"Error: {error}")
+    def test_first_device(self):
+        self.execute_remote_command("test_first_device")
 
-                self.status_label.setText("Device Status: Running")
-            except ValueError:
-                self.log_message("Please enter valid numbers in all fields.")
-        else:
-            self.log_message("Not connected to Raspberry Pi! Please press Connect.")
+    def next_device(self):
+        self.execute_remote_command("next_device")
 
+    def previous_device(self):
+        self.execute_remote_command("previous_device")
 
-    # Modify stop_device to use StopDeviceThread
-    def stop_device(self):
-        if hasattr(self, 'ssh_client') and self.ssh_client:
-            command = "pkill -f python3"
-            stdin, stdout, stderr = self.ssh_client.exec_command(command, timeout=5)
+    def disconnect_pins(self):
+        self.execute_remote_command("disconnect_pins")
+
+    def reconnect_pins(self):
+        self.execute_remote_command("reconnect_pins")
+
+    def disconnect_from_device(self):
+        if self.ssh_client:
             self.ssh_client.close()
-            self.status_label.setText("Device Status: Stopping...")
+            self.log_message("Disconnected from Raspberry Pi")
+            self.status_label.setText("Device Status: Disconnected")
         else:
-            self.log_message("Not connected to Raspberry Pi!")
+            self.log_message("No active connection to disconnect.")
 
-    def log_message(self, message):
-        self.log_text.append(message)
+    def execute_remote_command(self, command_name):
+        if not self.ssh_client or not self.ssh_client.get_transport().is_active():
+            self.log_message("Not connected to Raspberry Pi. Please connect first.")
+            return
+        try:
+            command = f"python3 /path/to/your/script.py {command_name}"
+            stdin, stdout, stderr = self.ssh_client.exec_command(command)
+            output = stdout.read().decode()
+            error = stderr.read().decode()
 
-    def resizeEvent(self, event):
-        window_size = self.size()
-        font_size = max(14, int(window_size.width() * 0.015))
-        self.status_label.setFont(QtGui.QFont("Arial", font_size, QtGui.QFont.Bold))
-        super(DeviceControlApp, self).resizeEvent(event)
+            if output:
+                self.log_message(f"{command_name} Output: {output}")
+            if error:
+                self.log_message(f"{command_name} Error: {error}")
+        except Exception as e:
+            self.log_message(f"Error executing {command_name}: {e}")
 
 
 def main():
@@ -184,5 +178,5 @@ def main():
     sys.exit(app.exec_())
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

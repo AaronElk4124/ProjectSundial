@@ -3,6 +3,19 @@ import paramiko
 from PyQt5 import QtWidgets, QtGui, QtCore
 
 
+def get_input_value(input_field):
+    """
+    Helper method to retrieve a numeric value from a QLineEdit field.
+    """
+    try:
+        value = input_field.text().strip()
+        if not value:  # Check if the input is empty
+            return None
+        return float(value)
+    except ValueError:
+        return None
+
+
 class DeviceControlApp(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
@@ -116,6 +129,8 @@ class DeviceControlApp(QtWidgets.QWidget):
             self.ssh_client.connect(hostname, username=username, password=password)
             self.log_message(f"Connected to Raspberry Pi at {hostname} via SSH")
             self.status_label.setText("Device Status: Connected")
+
+            self.ssh_client.exec_command("sudo pigpiod")
         except Exception as e:
             self.log_message(f"Error connecting to Raspberry Pi: {e}")
             self.status_label.setText("Device Status: Error")
@@ -127,7 +142,7 @@ class DeviceControlApp(QtWidgets.QWidget):
         self.execute_remote_command("step_backward")
 
     def test_connection(self):
-        self.execute_remote_command("test_connection")
+        self.execute_remote_command("Test_Connection")
 
     def test_first_device(self):
         self.execute_remote_command("test_first_device")
@@ -146,28 +161,43 @@ class DeviceControlApp(QtWidgets.QWidget):
 
     def disconnect_from_device(self):
         if self.ssh_client:
+            self.execute_remote_command("disconnect_from_device")
             self.ssh_client.close()
             self.log_message("Disconnected from Raspberry Pi")
             self.status_label.setText("Device Status: Disconnected")
         else:
             self.log_message("No active connection to disconnect.")
 
-    def execute_remote_command(self, command_name):
+    def execute_remote_command(self, file_name):
         if not self.ssh_client or not self.ssh_client.get_transport().is_active():
             self.log_message("Not connected to Raspberry Pi. Please connect first.")
             return
         try:
-            command = f"python3 /path/to/your/script.py {command_name}"
+
+            gear_ratio = get_input_value(self.gear_ratio_input)
+            steps_per_rotation = get_input_value(self.steps_per_rotation_input)
+            total_ics = get_input_value(self.total_ics_input)
+
+            if gear_ratio is None or steps_per_rotation is None or total_ics is None:
+                self.log_message("Please fill in all fields: Gear Ratio, Steps per Rotation, and Total ICs.")
+                return
+
+            if total_ics == 0:
+                self.log_message("Total ICs cannot be zero.")
+                return
+
+            computed_value = (gear_ratio * steps_per_rotation) / total_ics
+            command = f"python3 /home/team6/Desktop/stepper_testing/{file_name}.py {computed_value}"
             stdin, stdout, stderr = self.ssh_client.exec_command(command)
             output = stdout.read().decode()
             error = stderr.read().decode()
 
             if output:
-                self.log_message(f"{command_name} Output: {output}")
+                self.log_message(f"{computed_value} Output: {output}")
             if error:
-                self.log_message(f"{command_name} Error: {error}")
+                self.log_message(f"{computed_value} Error: {error}")
         except Exception as e:
-            self.log_message(f"Error executing {command_name}: {e}")
+            self.log_message(f"Error executing : {e}")
 
 
 def main():

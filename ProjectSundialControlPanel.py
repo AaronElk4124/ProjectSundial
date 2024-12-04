@@ -9,7 +9,7 @@ def get_input_value(input_field):
     """
     try:
         value = input_field.text().strip()
-        if not value:  # Check if the input is empty
+        if not value:
             return None
         return float(value)
     except ValueError:

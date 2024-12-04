@@ -129,6 +129,7 @@ class DeviceControlApp(QtWidgets.QWidget):
             self.ssh_client.connect(hostname, username=username, password=password)
             self.log_message(f"Connected to Raspberry Pi at {hostname} via SSH")
             self.status_label.setText("Device Status: Connected")
+            self.execute_remote_command("connect_to_device")
 
             self.ssh_client.exec_command("sudo pigpiod")
         except Exception as e:

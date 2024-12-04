@@ -21,7 +21,7 @@ Project Sundial is a Python-based GUI application designed to control a device f
    - `pigpiod` (on Raspberry Pi)
 
 3. **Hardware Setup**:
-   - Raspberry Pi 4 Model A
+   - Raspberry Pi 3 Model B+
    - Ethernet or Bluetooth connectivity
    - Stepper and servo motors
 

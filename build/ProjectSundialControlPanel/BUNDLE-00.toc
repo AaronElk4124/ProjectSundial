@@ -1,0 +1,3 @@
+([('ProjectSundialControlPanel',
+   '/Users/aaronelkin/Documents/GitHub/ProjectSundial/dist/ProjectSundialControlPanel',
+   'EXECUTABLE')],)
